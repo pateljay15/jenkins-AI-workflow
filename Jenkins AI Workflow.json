@@ -1,0 +1,223 @@
+{
+  "name": "Jenkins AI Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0993CX1U48",
+          "mode": "list",
+          "cachedResultName": "jstar-ai-failures"
+        },
+        "text": "=🚨 *Test Failure Alert* 🚨  \n*Test Name:* `{{ $json.testName }} `  \n*Classification:* *{{ $json.classification }}*   \n*Confidence:* {{ $json.confidence }}   \n*Flakiness Score:* {{ $json.flakinessScore }}  \n*Key Evidence:*  {{ $json.evidence }}\n*Error Message:* {{ $json.errorMessage }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        -976,
+        -256
+      ],
+      "id": "53908622-7399-4be8-8377-27ed4c46de06",
+      "name": "Send a message",
+      "webhookId": "64eafdec-c624-4821-8276-3939d44e19d9",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "Ll8Zct3s4BOEvPsD",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "feedFailure",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2272,
+        -256
+      ],
+      "id": "c6ca01eb-c471-4f3d-b6db-975269f61751",
+      "name": "Jenkins Webhook",
+      "webhookId": "3942addf-3ba4-4f16-b89d-45f18bdd6c7e"
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "jenkins-test-failures",
+        "fileName": "=cypress/{{ $json.body.testName }}/{{ $json.body.timestamp }}",
+        "binaryData": false,
+        "fileContent": "={{ JSON.stringify($json.body) }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        -2048,
+        -256
+      ],
+      "id": "5dd5a91e-d15e-4644-8cb5-0e1a729091fa",
+      "name": "Test Failure JSON to S3",
+      "credentials": {
+        "aws": {
+          "id": "NvvpG2XQNpZ5np0F",
+          "name": "AWS account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://ahd56aqdbru2ngpi5cvbnoostu0jgzmx.lambda-url.us-east-2.on.aws/",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "testName",
+              "value": "={{ $('Jenkins Webhook').item.json.body.testName }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1824,
+        -256
+      ],
+      "id": "40f637ff-83f6-4326-88b4-1d1fc4ef3297",
+      "name": "Fetch Last 5 Failures",
+      "alwaysOutputData": false,
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-pro",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-pro"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=SYSTEM:\nYou are a senior test reliability analyst. Apply the following rules in order before anything else:\n1. If the same test has failed 3 or more times out of the last 5 runs with textually identical or semantically equivalent error messages, classify as \"False Negative\" (real regression) regardless of hesitation.\n2. If failures vary significantly in message or appear sporadically (1–2 repeats), classify as \"False Positive\" (flaky/noise), unless strong evidence overrides.\n3. Only use \"Uncertain\" if the pattern contradicts rules and there is genuine ambiguity; explain why.\n\nUSER:\nI am providing the failure history in this shape: an array where the first element contains a key \"testResults\" with a list of recent failures for one test. Analyze them together and output exactly valid JSON (no extra text) with these fields:\n\n{\n  \"testName\": \"...\",\n  \"errorMessage\": \"...\",\n  \"classification\": \"<False Negative | False Positive | Uncertain>\",\n  \"confidence\": <number 0.0-1.0>, \n  \"evidence\": \"...\" ,\n  \"flakinessScore\": <float 0-1>, \n}\n\nUSER:\nHere are the last 5 failed runs of one test (only analyze the errorMessage and testName fields) and analyze as much test examples we have below, if any undefined than kindly ignore: \n1. testName: {{ $json.testResults[0].content.testName }}\n  errorMessage: {{ $json.testResults[0].content.errorMessage }}\n\n2. testName: {{ $json.testResults[1].content.testName }}\n  errorMessage: {{ $json.testResults[1].content.errorMessage }}\n3. testName: {{ $json.testResults[2].content.testName }}\n  errorMessage:{{ $json.testResults[2].content.errorMessage }}\n4. testName: {{ $json.testResults[3].content.testName }}\n  errorMessage: {{ $json.testResults[3].content.errorMessage }}\n5. testName: {{ $json.testResults[4].content.testName }}\n  errorMessage: {{ $json.testResults[4].content.errorMessage }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1600,
+        -256
+      ],
+      "id": "e20923af-8faf-48b1-a83d-810c9b10698d",
+      "name": "Gemini AI Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "byZh8pshSgmRZWEf",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Assuming only one item input; adjust if multiple\nlet jsonString = '';\nfor (const item of $input.all()) {\n  jsonString = item.json.content.parts[0].text;\n}\n\nlet parsed = {};\ntry {\n  parsed = JSON.parse(jsonString);\n} catch (error) {\n  parsed = {};\n}\n\n// Return the parsed JSON object directly\nreturn [{ json: parsed }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        -256
+      ],
+      "id": "31554f20-dd6e-41f3-a68b-28981686025f",
+      "name": "Process Output"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Send a message": {
+      "main": [
+        []
+      ]
+    },
+    "Jenkins Webhook": {
+      "main": [
+        [
+          {
+            "node": "Test Failure JSON to S3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test Failure JSON to S3": {
+      "main": [
+        [
+          {
+            "node": "Fetch Last 5 Failures",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Last 5 Failures": {
+      "main": [
+        [
+          {
+            "node": "Gemini AI Model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini AI Model": {
+      "main": [
+        [
+          {
+            "node": "Process Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Output": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "cb44cd5d-d32f-49b7-a62c-3a23a65d61d5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "dcf3e054ca4af1b63285bcd11087a0609e186f7323a37928085c30c95bc9579f"
+  },
+  "id": "SbNvBalUGfNUZdhx",
+  "tags": []
+}
